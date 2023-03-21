@@ -16,4 +16,4 @@ RUN dotnet publish -c release -o /app --no-restore
 FROM mcr.microsoft.com/dotnet/runtime:$BASE_TAG
 WORKDIR /app
 COPY --from=build /app .
-ENTRYPOINT ["dotnet", "TaintRemover.dll"]
+ENTRYPOINT ["dotnet", "Operator.dll"]

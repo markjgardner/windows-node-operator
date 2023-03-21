@@ -45,8 +45,8 @@ public class Worker : BackgroundService
     {
       Metadata = new V1ObjectMeta
       {
-        Name = "podName",
-        NamespaceProperty = "podNamespace"
+        Name = podName,
+        NamespaceProperty = podNamespace
       },
       Spec = new V1PodSpec
       {
@@ -56,22 +56,48 @@ public class Worker : BackgroundService
           new V1Container
           {
             Name = "add-reg-key",
-            Image = "mcr.microsoft.com/oss/kubernetes/windows-host-process-containers-base-image:v1.0.0",
+            Image = "mcr.microsoft.com/windows/nanoserver:ltsc2019",
             Command = new List<string> { "cmd.exe" },
-            Args = new List<string> { "/c", "reg add \"HKLM\\SYSTEM\\CurrentControlSet\\Services\\hns\\State\" /v DNSMaximumTTL /t REG_DWORD /d \"30\" /f" },
+            Args = new List<string> { 
+              "/c", 
+              "reg", 
+              "add", 
+              @"HKLM\SYSTEM\CurrentControlSet\Services\hns\State", 
+              "/v",
+              "DNSMaximumTTL",
+              "/t",
+              "REG_DWORD", 
+              "/d",
+              "30", 
+              "/f" 
+            },
             SecurityContext = new V1SecurityContext
             {
               Privileged = true
             }
           }
+        },
+        Tolerations = new List<V1Toleration>
+        {
+          new V1Toleration
+          {
+            Key = taint.Key,
+            Effect = taint.Effect,
+            Value = taint.Value
+          }
         }
       }
     };
 
-    var result = await _k8s.CreateNamespacedPodAsync(pod, podNamespace);
-
-    return result != null;
-
+    try {
+      var result = await _k8s.CreateNamespacedPodAsync(pod, podNamespace);
+      return result != null;
+    }
+    catch (Exception ex)
+    {
+      _log.LogError(ex, "Error creating pod");
+      return false;
+    }
   }
 
   private bool WaitForPodCompletion(CancellationToken stoppingToken)
