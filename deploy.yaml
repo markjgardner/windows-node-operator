@@ -19,7 +19,7 @@ metadata:
   name: win-node-manager
 subjects:
 - kind: ServiceAccount
-  name: winOp-node-operator
+  name: winop-node-operator
   namespace: default
 roleRef:
   kind: ClusterRole
@@ -29,7 +29,7 @@ roleRef:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: winOp-hpc-scheduler
+  name: winop-hpc-scheduler
   namespace: default
 subjects:
 - kind: ServiceAccount
@@ -63,9 +63,10 @@ spec:
         effect: NoSchedule
       nodeSelector:
         kubernetes.io/os: windows
-      Containers:
+      restartPolicy: Never
+      containers:
       - name: win-node-operator
-        image: 
+        image:
         resources:
           limits:
             memory: 200Mi

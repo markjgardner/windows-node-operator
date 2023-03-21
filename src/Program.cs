@@ -33,6 +33,7 @@ try {
   await host.StartAsync();
   await host.StopAsync();
   await host.WaitForShutdownAsync();
+  return 0;
 }
 finally
 {

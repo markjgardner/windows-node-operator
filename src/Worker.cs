@@ -70,11 +70,17 @@ public class Worker : BackgroundService
               "/d",
               "30", 
               "/f" 
-            },
-            SecurityContext = new V1SecurityContext
-            {
-              Privileged = true
             }
+          }
+        },
+        RestartPolicy = "Never",
+        HostNetwork = true,
+        SecurityContext = new V1PodSecurityContext
+        {
+          WindowsOptions = new V1WindowsSecurityContextOptions
+          {
+            HostProcess = true,
+            RunAsUserName = "NT AUTHORITY\\SYSTEM"
           }
         },
         Tolerations = new List<V1Toleration>
