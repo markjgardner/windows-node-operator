@@ -28,7 +28,7 @@ public class Worker : BackgroundService
       var keyAdded = await AddRegKey();
       //Wait for the pod to complete
       var success = WaitForPodCompletion(stoppingToken);
-      if (success)
+      if (success && !stoppingToken.IsCancellationRequested)
       {
         //Remove the node taint
         var untainted = await RemoveTaint();
