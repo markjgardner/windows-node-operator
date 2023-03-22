@@ -3,6 +3,10 @@ using k8s.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using System;
+using System.Threading;
 
 public class Worker : BackgroundService
 {
@@ -10,7 +14,7 @@ public class Worker : BackgroundService
   private readonly ILogger<Worker> _log;
   private readonly IConfiguration _config;
 
-  private static readonly string podName = "add-reg-key";
+  private readonly string podName;
   private static readonly string podNamespace = "default";
 
   public Worker(ILogger<Worker> logger, IConfiguration config, Kubernetes client)
@@ -18,21 +22,21 @@ public class Worker : BackgroundService
     _log = logger;
     _config = config;
     _k8s = client;
+    podName="add-reg-key-"+_config["NODE_NAME"];
   }
 
   protected override async Task ExecuteAsync(CancellationToken stoppingToken)
   {
-    while(stoppingToken.IsCancellationRequested == false)
+    //Create a host process container pod on this node that adds a registry key
+    var keyAdded = await AddRegKey();
+    //Wait for the pod to complete
+    var success = WaitForPodCompletion(stoppingToken);
+    if (success && !stoppingToken.IsCancellationRequested)
     {
-      //Create a host process container pod on this node that adds a registry key
-      var keyAdded = await AddRegKey();
-      //Wait for the pod to complete
-      var success = WaitForPodCompletion(stoppingToken);
-      if (success && !stoppingToken.IsCancellationRequested)
-      {
-        //Remove the node taint
-        var untainted = await RemoveTaint();
-      }
+      //Remove the node taint
+      await RemoveTaint();
+      //Label node as patched
+      await LabelNode();
     }
   }
   private async Task<bool> AddRegKey()
@@ -108,22 +112,67 @@ public class Worker : BackgroundService
 
   private bool WaitForPodCompletion(CancellationToken stoppingToken)
   {
-    var pod = _k8s.ReadNamespacedPodStatus(podName, podNamespace);
-    while(pod.Status.Phase != "Succeeded" && !stoppingToken.IsCancellationRequested)
-    {
-      Task.Delay(5000, stoppingToken);
-      pod = _k8s.ReadNamespacedPodStatus(podName, podNamespace);
+    try {
+      var pod = _k8s.ReadNamespacedPodStatus(podName, podNamespace);
+      while(pod.Status.Phase != "Succeeded" && !stoppingToken.IsCancellationRequested)
+      {
+        Task.Delay(5000, stoppingToken);
+        pod = _k8s.ReadNamespacedPodStatus(podName, podNamespace);
+      }
+      return pod.Status.Phase == "Succeeded";
     }
-    return pod.Status.Phase != "Succeeded";
+    catch (k8s.Autorest.HttpOperationException ex) {
+      _log.LogError(ex, "Error watching pod");
+      _log.LogError(ex.Response.Content);
+      return false;
+    }
   }
 
   private async Task<bool> RemoveTaint()
   {
     var nodeName = _config["NODE_NAME"];
     var taint = new V1Taint().Parse(_config["TAINT"]);
-    var node = _k8s.ReadNode(nodeName);
-    node.Spec.Taints.Remove(taint);
-    var result = await _k8s.ReplaceNodeAsync(node, nodeName);
-    return result.Spec.Taints.Contains(taint);
+    try {
+      var node = _k8s.ReadNode(nodeName);
+      var newTaints = new List<V1Taint>();
+      if (node.Spec.Taints != null && node.Spec.Taints.Any())
+      {
+        foreach (var t in node.Spec.Taints)
+        {
+          if (!t.Equals(taint))
+          {
+            newTaints.Add(t);
+          }
+        }
+      }
+      node.Spec.Taints = newTaints;
+      var result = await _k8s.ReplaceNodeAsync(node, nodeName);
+      return result.Spec.Taints == null || !result.Spec.Taints.Any(t=>t.Equals(taint));
+    }
+    catch (k8s.Autorest.HttpOperationException ex)
+    {
+      _log.LogError(ex, "Error removing taint");
+      _log.LogError(ex.Response.Content);
+      return false;
+    }
+  }
+
+  private async Task<bool> LabelNode()
+  {
+    var nodeName = _config["NODE_NAME"];
+    try {
+      var node = _k8s.ReadNode(nodeName);
+      if (node.Metadata.Labels.Any(l=>l.Key == "RegistryPatched"))
+        return true;
+      node.Metadata.Labels.Add("RegistryPatched", "true");
+      var result = await _k8s.ReplaceNodeAsync(node, nodeName);
+      return result.Metadata.Labels.ContainsKey("RegistryPatched");
+    }
+    catch (k8s.Autorest.HttpOperationException  ex)
+    {
+      _log.LogError(ex, "Error labeling node");
+      _log.LogError(ex.Response.Content);
+      return false;
+    }
   }
 }

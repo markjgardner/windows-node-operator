@@ -7,10 +7,10 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   namespace: default
-  name: hpc-scheduler
+  name: pod-scheduler
 rules:
 - apiGroups: [""]
-  resources: ["pods"]
+  resources: ["pods", "pods/status"]
   verbs: ["create", "update", "delete", "patch", "get", "watch", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -19,7 +19,7 @@ metadata:
   name: win-node-manager
 subjects:
 - kind: ServiceAccount
-  name: winop-node-operator
+  name: win-node-operator
   namespace: default
 roleRef:
   kind: ClusterRole
@@ -29,7 +29,7 @@ roleRef:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: winop-hpc-scheduler
+  name: win-pod-scheduler
   namespace: default
 subjects:
 - kind: ServiceAccount
@@ -37,7 +37,7 @@ subjects:
   namespace: default
 roleRef:
   kind: Role
-  name: hpc-scheduler
+  name: pod-scheduler
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1
@@ -63,10 +63,9 @@ spec:
         effect: NoSchedule
       nodeSelector:
         kubernetes.io/os: windows
-      restartPolicy: Never
       containers:
       - name: win-node-operator
-        image:
+        image: 
         resources:
           limits:
             memory: 200Mi
@@ -81,3 +80,10 @@ spec:
         - name: TAINT
           value: node/freshness=new:NoSchedule
       terminationGracePeriodSeconds: 30
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: RegistryPatched
+                operator: DoesNotExist
